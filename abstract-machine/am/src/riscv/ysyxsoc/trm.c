@@ -21,16 +21,65 @@ int main(const char *args);
 extern char _data_lma;          // 数据段在MROM中的位置
 extern char _data_vma_start;    // 数据段在SRAM中的起始位置
 extern char _data_vma_end;      // 数据段在SRAM中的结束位置
+
+extern char _text_lma;          // 代码段在flash中的位置
+extern char _text_vma_start;    // 代码段在SRAM中的起始位置
+extern char _text_vma_end;      // 代码段在SRAM中的结束位置
+extern char _execute_main_offset;
+extern char _execute_main_sram_addr;
+
+extern char _rodata_lma;        // 只读数据段在flash中的位置
+extern char _rodata_vma_start;  // 只读数据段在SRAM中的起始位置
+extern char _rodata_vma_end;    // 只读数据段在SRAM中的结束位置
+
+
+
 extern char _bss_start;         // BSS段起始位置
+
 //extern char _bss_end;           // BSS段结束位置
 
 
 
 
-
-
-
 void bootloader() {
+
+  uint32_t *src = (uint32_t*)&_data_lma;// 按字复制保证对齐
+  uint32_t *dst = (uint32_t*)&_data_vma_start;
+  size_t words = (&_data_vma_end - &_data_vma_start) / 4;
+  
+  for (size_t i=0; i<words; i++) {
+    dst[i] = src[i]; // 32位对齐访问
+  }
+
+   src = (uint32_t*)&_text_lma;
+  dst = (uint32_t*)&_text_vma_start;
+  words = (&_text_vma_end - &_text_vma_start) / 4;
+  
+  for (size_t i = 0; i < words; i++) {
+    dst[i] = src[i];  // 32位对齐访问
+  }
+ 
+
+  // 复制.rodata段
+  src = (uint32_t*)&_rodata_lma;
+  dst = (uint32_t*)&_rodata_vma_start;
+  words = (&_rodata_vma_end - &_rodata_vma_start) / 4;
+  
+  for (size_t i = 0; i < words; i++) {
+    dst[i] = src[i];  // 32位对齐访问
+  }
+
+   
+
+asm volatile (
+    "la t0, _execute_main_sram_addr\n\t"  // 直接加载符号地址
+    "jalr zero, t0, 0"
+    : : : "t0"
+);
+}
+
+
+/*void bootloader() {
   uint32_t *src = (uint32_t*)&_data_lma;// 按字复制保证对齐
   uint32_t *dst = (uint32_t*)&_data_vma_start;
   size_t words = (&_data_vma_end - &_data_vma_start) / 4;
@@ -40,7 +89,7 @@ void bootloader() {
   }
 
 
-}
+}*/
 
 //extern char _pmem_start;
 //#define PMEM_SIZE (16 * 1024 * 1024)  // ysyxSoC的SRAM大小，16MB
@@ -80,7 +129,7 @@ void uart_init() {
 
 
 void putch(char ch) {
-
+    
     while ((inb(UART_BASE + UART_REG_LSR) & UART_LSR_THRE) == 0) {
         // 等待THRE位置1
     }
@@ -94,7 +143,7 @@ void halt(int code) {
   while (1);
 }
 
-static void put_dec(uint32_t num) {
+/*static void put_dec(uint32_t num) {
     char buf[10];
     int i = 0;
     do {
@@ -105,13 +154,43 @@ static void put_dec(uint32_t num) {
     while (--i >= 0) {
         putch(buf[i]);
     }
+}*/
+void execute_main(void) __attribute__((used));
+void execute_main() {
+    uart_init();
+  //  bootloader();
+    //uart_init();
+      // 添加CSR读取
+  
+ /* uint32_t vendor_id, arch_id;
+  __asm__ __volatile__("csrr %0, 0xF11" : "=r"(vendor_id));  // mvendorid
+  __asm__ __volatile__("csrr %0, 0xF12" : "=r"(arch_id));    // marchid
+
+  // 从mvendorid解析"ysyx"
+  putch((vendor_id >> 24) & 0xFF); // y
+  putch((vendor_id >> 16) & 0xFF); // s
+  putch((vendor_id >> 8)  & 0xFF); // y
+  putch( vendor_id        & 0xFF); // x
+  
+  // 输出下划线
+  putch('_');
+  
+  // 从marchid解析学号（直接输出十进制值）
+  put_dec(arch_id);  // 这里假设arch_id寄存器存储的是24090014的十进制值
+  
+  // 换行
+  putch('\n');*/
+   
+ volatile int ret = main(mainargs);
+  halt(ret);
+    // 切回text段
+   
 }
 
 
-
 void _trm_init() {
-  uart_init();
-    bootloader();
+  /*uart_init();
+  //  bootloader();
     //uart_init();
       // 添加CSR读取
   
@@ -132,9 +211,12 @@ void _trm_init() {
   put_dec(arch_id);  // 这里假设arch_id寄存器存储的是24090014的十进制值
   
   // 换行
-  putch('\n');
+  putch('\n');*/
   
+  bootloader();
 
-  int ret = main(mainargs);
-  halt(ret);
+   execute_main();
+
+
+ 
 }
